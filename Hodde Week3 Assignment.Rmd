@@ -1,0 +1,105 @@
+---
+title: "IS607 - Week 3 - Combining Data From Multiple Sources"
+author: "Rob Hodde"
+date: "February 14, 2016"
+output: html_document
+---
+
+```
+Note: See Appendix A (near bottom) for the sql script to create the required database in mySQL.
+      The connection string password below must be modified for your machine.
+
+```
+  
+```{r}
+
+# use the R ODBC package to establish a connection to mySQL database and select records into data frames
+require(RODBC)
+cnString <- "MySQL_ANSI;SERVER=localhost;DATABASE=tb;UID=root;PASSWORD=CUNYRBridge4!;OPTION=3;"  
+db <- odbcConnect(cnString)
+ 
+# download the mySQL view records
+df <- sqlQuery(db,"SELECT * FROM vw_tb_cases", stringsAsFactors = FALSE)  
+
+# subset to only the three variables to be plotted
+df_sub <- subset(df,select = c("Country","Year","Rate"))
+
+```
+
+
+For a quick glance at the data we can look at a lattice x-y plot:
+
+```{r}
+library(lattice)
+xyplot(Rate ~ Year | factor(Country), data=df_sub, layout=c(4,9))
+
+
+```
+
+
+In terms of downstream data analysis and reporting, I would look for countries that have recently trended sharply up or down on reported cases.  I would also research R graphics in greater depth in order to design a more user-friendly representation of the data.  
+
+
+------------
+
+###Appendix A  
+
+```
+
+To create the database, copy the SQL script below into your MySQL workbench and run it.
+
+DROP DATABASE if exists tb;
+CREATE DATABASE tb;
+USE tb;
+
+DROP TABLE IF EXISTS tb;
+CREATE TABLE tb 
+(
+  country varchar(100) NOT NULL,
+  year int NOT NULL,
+  sex varchar(6) NOT NULL,
+  child int NULL,
+  adult int NULL,
+  elderly int NULL
+);
+
+LOAD DATA LOCAL INFILE 'C:/Data/tb.csv'
+INTO TABLE tb
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+(country, year, sex, @child, @adult, @elderly)
+SET
+child = nullif(@child,-1),
+adult = nullif(@adult,-1),
+elderly = nullif(@elderly,-1)
+;
+
+DROP TABLE IF EXISTS population;
+CREATE TABLE population 
+(
+  country varchar(100) NOT NULL,
+  year int NOT NULL,
+  population int NOT NULL
+);
+LOAD DATA LOCAL INFILE 'C:/Data/population.csv' 
+INTO TABLE population
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(country, year, population)
+;
+vw_tb_cases
+DROP VIEW IF EXISTS vw_tb_cases;
+CREATE VIEW vw_tb_cases AS
+    SELECT tb.country AS Country, tb.year AS Year, (SUM(IFNULL(child,0)) + SUM(IFNULL(adult,0)) + SUM(IFNULL(elderly,0))) / (MAX(p.population)) AS Rate
+           ,CASE WHEN (SUM(child IS NULL) + SUM(adult IS NULL) + sum(elderly IS NULL)) > 0 THEN 1 ELSE 0 END dirty_data  
+FROM tb.tb 
+JOIN population p ON tb.country = p.country AND tb.year = p.year	 
+GROUP BY country, year
+ORDER BY country, year;
+
+
+```
+
